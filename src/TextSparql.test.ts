@@ -103,17 +103,19 @@ describe("TextSparql — extract", () => {
 });
 
 describe("TextSparql — framework integration", () => {
-    it("renders extracted hierarchy via format()", () => {
+    it("renders extracted hierarchy via format()", async () => {
         const h = new TextSparql(metadata);
-        const out = h.symbolsRaw("SELECT * WHERE { ?s ?p ?o }");
+        const out = await h.symbolsRaw("SELECT * WHERE { ?s ?p ?o }");
         assert.ok(out.includes("method select"));
     });
 
-    it("inherits jsonpath query against the symbol outline", async () => {
+    it("jsonpath dispatches against the deep-json ANTLR parse tree (issue #10)", async () => {
+        // Every ANTLR deep tree has a root with a `type` field — verify
+        // jsonpath reaches it via the deep-channel dispatch.
         const h = new TextSparql(metadata);
-        const src = "PREFIX foaf: <http://xmlns.com/foaf/0.1/>\nSELECT * WHERE { ?s ?p ?o }";
-        const f = await h.query(src, "jsonpath", "$.foaf");
-        assert.equal(f.length, 1);
+        const roots = await h.query("class Probe {}", "jsonpath", "$.type");
+        assert.equal(roots.length, 1);
+        assert.equal(typeof roots[0].matched, "string");
     });
 });
 
