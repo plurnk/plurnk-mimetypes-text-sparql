@@ -17,6 +17,13 @@ import { SparqlParserVisitor } from "./generated/SparqlParserVisitor.ts";
 //   - the query form              → method ("select", "construct",
 //                                   "describe", "ask")
 //   - SELECT'd variables          → field (each projected variable)
+//
+// References (SPEC §16): a prefixed name (`foaf:name`) USES the `PREFIX foaf:`
+// binding declared in the same file. The prefix label is the in-corpus join
+// target (a `field` def from visitPrefixDecl); the local part is an IRI
+// fragment, not in-corpus, and is dropped. Each such use is a `use` edge scoped
+// to its enclosing query form (the emitted `method` def). Variables (`?x`),
+// absolute IRIs, and literals are NOT cross-referenceable defs and emit nothing.
 export default class TextSparql extends AntlrExtractor {
     protected parseTree(content: string): unknown {
         const lexer = new SparqlLexer(CharStream.fromString(content));
@@ -58,24 +65,43 @@ class TextSparqlVisitor extends withExtractor(SparqlParserVisitor) {
             const t = (v as { getText?: () => string }).getText?.();
             if (t) this.addSymbol("field", t, ctx);
         }
+        // Scope the body so prefixed-name uses carry container = "select" (the
+        // emitted method def, the @> join key).
+        this.gateContainer("select", ctx);
         return null;
     };
 
     visitConstructQuery = (ctx: any): null => {
         if (this.inBody) return null;
         this.addSymbol("method", "construct", ctx);
+        this.gateContainer("construct", ctx);
         return null;
     };
 
     visitDescribeQuery = (ctx: any): null => {
         if (this.inBody) return null;
         this.addSymbol("method", "describe", ctx);
+        this.gateContainer("describe", ctx);
         return null;
     };
 
     visitAskQuery = (ctx: any): null => {
         if (this.inBody) return null;
         this.addSymbol("method", "ask", ctx);
+        this.gateContainer("ask", ctx);
+        return null;
+    };
+
+    // A prefixed name (`foaf:name` PNAME_LN, or `foaf:` PNAME_NS) USES the
+    // declared PREFIX binding. The label before the first colon is the
+    // in-corpus join target; the local part is an IRI fragment, dropped.
+    visitPrefixedName = (ctx: any): null => {
+        const text = ctx.getText?.();
+        if (!text) return null;
+        const colon = text.indexOf(":");
+        if (colon <= 0) return null;
+        const prefix = text.slice(0, colon);
+        this.addRef("use", prefix, ctx);
         return null;
     };
 }
